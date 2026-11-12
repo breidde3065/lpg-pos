@@ -1,0 +1,17 @@
+node_modules/
+dist/
+build/
+.expo/
+web-build/
+coverage/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+Thumbs.db
+*.db
+*.sqlite
+*.sqlite3
+*.dump
+*.backup

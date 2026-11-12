@@ -1,0 +1,338 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum CylinderStatus {
+  FULL
+  EMPTY
+}
+
+enum StockMovementType {
+  OPENING_BALANCE
+  RECEIPT
+  SALE
+  EXCHANGE
+  ADJUSTMENT
+  TRANSFER_IN
+  TRANSFER_OUT
+  REVERSAL
+}
+
+enum SaleType {
+  CYLINDER_SALE
+  REFILL_EXCHANGE
+  EXCHANGE
+  OTHER
+}
+
+enum SaleStatus {
+  DRAFT
+  COMPLETED
+  VOIDED
+}
+
+enum PaymentType {
+  SALE_PAYMENT
+  CUSTOMER_REPAYMENT
+}
+
+enum PaymentMethod {
+  CASH
+  MPESA_MANUAL
+  BANK_TRANSFER
+  OTHER
+}
+
+enum DeliveryStatus {
+  PENDING
+  DISPATCHED
+  DELIVERED
+  FAILED
+  CANCELLED
+}
+
+enum UserRole {
+  SUPER_USER
+  CASHIER
+}
+enum UserStatus{
+  PENDING
+  APPROVED
+  REJECTED
+  DEACTIVATED
+}
+
+enum ProductCategory{
+  LPG
+  MISC
+}
+model Branch {
+  id          String          @id @default(uuid()) @db.Uuid
+  name        String
+  code        String          @unique
+  address     String?
+  isActive    Boolean         @default(true) @map("is_active")
+  createdAt   DateTime        @default(now()) @map("created_at")
+  updatedAt   DateTime        @updatedAt      @map("updated_at")
+  users       User[]
+  inventory   InventoryBalance[]
+  movements   StockMovement[]
+  stockIntakes StockIntake[]
+  sales       Sale[]
+  payments    Payment[]
+  deliveries  Delivery[]
+  auditLogs   AuditLog[]
+
+
+  @@map("branches")
+}
+
+model User {
+  id           String     @id @default(uuid()) @db.Uuid
+  name         String
+  email        String     @unique
+  passwordHash String     @map("password_hash")
+  role         UserRole   @default(CASHIER)
+  status       UserStatus @default(APPROVED)
+  branchId     String?    @map("branch_id") @db.Uuid
+  isActive     Boolean    @default(true) @map("is_active")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  branch             Branch?       @relation(fields: [branchId], references: [id])
+  sales              Sale[]        @relation("SaleCreatedBy")
+  payments           Payment[]     @relation("PaymentRecordedBy")
+  movements          StockMovement[] @relation("MovementCreatedBy")
+  stockIntakes       StockIntake[] @relation("IntakeRecordedBy")
+  auditLogs          AuditLog[]
+
+  @@map("users")
+}
+
+model Customer {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  phone     String?
+  address   String?
+  notes     String?
+  isActive  Boolean  @default(true) @map("is_active")
+  sales     Sale[]
+  payments  Payment[]
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([phone])
+  @@map("customers")
+}
+
+model Brand {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  products Product[]
+
+  @@map("brands")
+}
+
+model Product {
+  id             String          @id @default(uuid()) @db.Uuid
+  name           String
+  sku            String          @unique
+  category       ProductCategory @default(LPG)
+  brandId        String?         @map("brand_id") @db.Uuid
+  cylinderSize   String?         @map("cylinder_size")
+  variant        String?
+  unit           String          @default("piece")
+  sellingPrice   Decimal         @default(0) @map("selling_price") @db.Decimal(12, 2)
+  exchangePrice  Decimal         @default(0) @map("exchange_price") @db.Decimal(12, 2)
+  isActive       Boolean         @default(true) @map("is_active")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+
+  brand      Brand?             @relation(fields: [brandId], references: [id])
+  inventory  InventoryBalance[]
+  movements  StockMovement[]
+  saleItems  SaleItem[]
+
+  @@index([category])
+  @@index([brandId])
+  @@index([name])
+  @@map("products")
+}
+
+model InventoryBalance {
+  id             String         @id @default(uuid()) @db.Uuid
+  branchId       String         @map("branch_id") @db.Uuid
+  productId      String         @map("product_id") @db.Uuid
+  cylinderStatus CylinderStatus @map("cylinder_status")
+  quantity       Int            @default(0)
+  branch         Branch         @relation(fields: [branchId], references: [id])
+  product        Product        @relation(fields: [productId], references: [id])
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  @@unique([branchId, productId, cylinderStatus])
+  @@map("inventory_balances")
+}
+
+model StockIntake {
+  id           String   @id @default(uuid()) @db.Uuid
+  branchId     String   @map("branch_id") @db.Uuid
+  recordedById String   @map("recorded_by_id") @db.Uuid
+  supplier     String?
+  deliveryRef  String?  @map("delivery_ref")
+  notes        String?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  branch     Branch          @relation(fields: [branchId], references: [id])
+  recordedBy User            @relation("IntakeRecordedBy", fields: [recordedById], references: [id])
+  movements  StockMovement[]
+
+  @@index([branchId, createdAt])
+  @@map("stock_intakes")
+}
+
+model StockMovement {
+  id             String            @id @default(uuid()) @db.Uuid
+  branchId       String            @map("branch_id") @db.Uuid
+  productId      String            @map("product_id") @db.Uuid
+  intakeId       String?           @map("intake_id") @db.Uuid
+  cylinderStatus CylinderStatus    @map("cylinder_status")
+  quantityDelta  Int               @map("quantity_delta")
+  movementType   StockMovementType @map("movement_type")
+  referenceType  String?           @map("reference_type")
+  referenceId    String?           @map("reference_id") @db.Uuid
+  reason         String?
+  createdById    String            @map("created_by_id") @db.Uuid
+  createdAt      DateTime          @default(now()) @map("created_at")
+
+  branch    Branch       @relation(fields: [branchId], references: [id])
+  product   Product      @relation(fields: [productId], references: [id])
+  intake    StockIntake? @relation(fields: [intakeId], references: [id])
+  createdBy User         @relation("MovementCreatedBy", fields: [createdById], references: [id])
+
+  @@index([branchId, productId, createdAt])
+  @@index([intakeId])
+  @@map("stock_movements")
+}
+
+model Sale {
+  id          String     @id @default(uuid()) @db.Uuid
+  saleNumber  String     @unique @map("sale_number")
+  branchId    String     @map("branch_id") @db.Uuid
+  customerId  String?    @map("customer_id") @db.Uuid
+  saleType    SaleType   @map("sale_type")
+  status      SaleStatus @default(DRAFT)
+  subtotal    Decimal    @db.Decimal(12, 2)
+  discount    Decimal    @default(0) @db.Decimal(12, 2)
+  total       Decimal    @db.Decimal(12, 2)
+  notes       String?
+  createdById String     @map("created_by_id") @db.Uuid
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  branch      Branch             @relation(fields: [branchId], references: [id])
+  customer    Customer?           @relation(fields: [customerId], references: [id])
+  createdBy   User                @relation("SaleCreatedBy", fields: [createdById], references: [id])
+  items       SaleItem[]
+  payments    Payment[]
+  allocations PaymentAllocation[]
+  delivery    Delivery?
+
+  @@index([branchId, createdAt])
+  @@index([customerId, createdAt])
+  @@map("sales")
+}
+
+model SaleItem {
+  id        String  @id @default(uuid()) @db.Uuid
+  saleId    String  @map("sale_id") @db.Uuid
+  productId String  @map("product_id") @db.Uuid
+  quantity  Int
+  unitPrice Decimal @map("unit_price") @db.Decimal(12, 2)
+  lineTotal Decimal @map("line_total") @db.Decimal(12, 2)
+
+  sale    Sale    @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@map("sale_items")
+}
+
+model Payment {
+  id           String        @id @default(uuid()) @db.Uuid
+  branchId     String        @map("branch_id") @db.Uuid
+  customerId   String?       @map("customer_id") @db.Uuid
+  saleId       String?       @map("sale_id") @db.Uuid
+  paymentType  PaymentType   @map("payment_type")
+  method       PaymentMethod
+  amount       Decimal       @db.Decimal(12, 2)
+  reference    String?
+  notes        String?
+  recordedById String        @map("recorded_by_id") @db.Uuid
+  createdAt    DateTime      @default(now()) @map("created_at")
+
+  branch      Branch             @relation(fields: [branchId], references: [id])
+  customer    Customer?          @relation(fields: [customerId], references: [id])
+  sale        Sale?              @relation(fields: [saleId], references: [id])
+  recordedBy  User               @relation("PaymentRecordedBy", fields: [recordedById], references: [id])
+  allocations PaymentAllocation[]
+
+  @@index([customerId, createdAt])
+  @@index([branchId, createdAt])
+  @@map("payments")
+}
+
+model PaymentAllocation {
+  id        String  @id @default(uuid()) @db.Uuid
+  paymentId String  @map("payment_id") @db.Uuid
+  saleId    String  @map("sale_id") @db.Uuid
+  amount    Decimal @db.Decimal(12, 2)
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  sale    Sale    @relation(fields: [saleId], references: [id], onDelete: Restrict)
+
+  @@unique([paymentId, saleId])
+  @@map("payment_allocations")
+}
+
+model Delivery {
+  id            String         @id @default(uuid()) @db.Uuid
+  saleId        String         @unique @map("sale_id") @db.Uuid
+  branchId      String         @map("branch_id") @db.Uuid
+  address       String
+  contactPhone  String?        @map("contact_phone")
+  status        DeliveryStatus @default(PENDING)
+  deliveryNotes String?        @map("delivery_notes")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+  createdAt     DateTime       @default(now()) @map("created_at")
+
+  branch Branch @relation(fields: [branchId], references: [id])
+  sale   Sale   @relation(fields: [saleId], references: [id])
+
+  @@index([branchId, status])
+  @@map("deliveries")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String?  @map("user_id") @db.Uuid
+  branchId   String?  @map("branch_id") @db.Uuid
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String?  @map("entity_id")
+  details    Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user   User?   @relation(fields: [userId], references: [id])
+  branch Branch? @relation(fields: [branchId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
