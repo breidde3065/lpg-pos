@@ -190,7 +190,8 @@ model StockIntake {
   deliveryRef  String?  @map("delivery_ref")
   notes        String?
   createdAt    DateTime @default(now()) @map("created_at")
-
+  voidedAt     DateTime? @map("voided_at")
+  voidedById   String?   @map("voided_by_id") @db.Uuid
   branch     Branch          @relation(fields: [branchId], references: [id])
   recordedBy User            @relation("IntakeRecordedBy", fields: [recordedById], references: [id])
   movements  StockMovement[]

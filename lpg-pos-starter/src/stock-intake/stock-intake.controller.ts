@@ -46,6 +46,11 @@ export class StockIntakeController {
     return this.stockIntakeService.findAll(scopeBranch(user, branchId));
   }
 
+  @Post(':id/undo')
+  undo(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.stockIntakeService.undo(id, user);
+  }
+
   @Get(':id')
   async findOne(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     const intake = await this.stockIntakeService.findOne(id);

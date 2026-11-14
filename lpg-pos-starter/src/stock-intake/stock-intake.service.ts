@@ -2,13 +2,15 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  ConflictException,
+  ForbiddenException,
 } from '@nestjs/common';
 import {
   CylinderStatus,
   StockMovementType,
 } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
-
+import { AuthUser } from '../auth/auth.guard';
 type IntakeItemInput = {
   productId?: string;
   cylinderStatus?: string;
@@ -67,10 +69,10 @@ export class StockIntakeService {
 
       if (
         !Number.isSafeInteger(quantity) ||
-        (quantity ?? 0) <= 0
+        (quantity ?? 0) < 0
       ) {
         throw new BadRequestException(
-          `Item ${index + 1}: quantity must be a positive whole number.`,
+          `Item ${index + 1}: quantity must be a  whole number, 0 or greater.`,
         );
       }
 
@@ -140,6 +142,8 @@ export class StockIntakeService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      
+      
       const intake = await tx.stockIntake.create({
         data: {
           branchId,
@@ -168,7 +172,10 @@ export class StockIntakeService {
           update: {
             quantity: { increment: item.quantity },
           },
+          
         });
+                // A zero entry only registers the item; no history line needed.
+        if (item.quantity === 0) continue;
 
         await tx.stockMovement.create({
           data: {
@@ -209,11 +216,84 @@ export class StockIntakeService {
     });
   }
 
+  async undo(id: string, user: AuthUser) {
+    return this.prisma.$transaction(async (tx) => {
+      const intake = await tx.stockIntake.findUnique({
+        where: { id },
+        include: {
+          movements: { where: { movementType: StockMovementType.RECEIPT } },
+        },
+      });
+
+      if (!intake) throw new NotFoundException('Stock intake not found.');
+
+      if (user.role !== 'SUPER_USER' && intake.branchId !== user.branchId) {
+        throw new ForbiddenException('You can only undo entries at your own branch.');
+      }
+
+      // Marks it undone; if two taps race, only one wins.
+      const marked = await tx.stockIntake.updateMany({
+        where: { id, voidedAt: null },
+        data: { voidedAt: new Date(), voidedById: user.id },
+      });
+
+      if (marked.count === 0) {
+        throw new BadRequestException('This entry was already undone.');
+      }
+
+      let belowZero = false;
+
+      for (const m of intake.movements) {
+        const where = {
+          branchId: intake.branchId,
+          productId: m.productId,
+          cylinderStatus: m.cylinderStatus,
+        };
+
+        const balance = await tx.inventoryBalance.findFirst({ where });
+
+        if ((balance?.quantity ?? 0) < m.quantityDelta) {
+          if (user.role !== 'SUPER_USER') {
+            throw new ConflictException(
+              'Some of this stock has already been sold, so it cannot be undone here. Please ask the owner.',
+            );
+          }
+          belowZero = true;
+        }
+
+        await tx.inventoryBalance.updateMany({
+          where,
+          data: { quantity: { decrement: m.quantityDelta } },
+        });
+
+        await tx.stockMovement.create({
+          data: {
+            branchId: intake.branchId,
+            productId: m.productId,
+            intakeId: intake.id,
+            cylinderStatus: m.cylinderStatus,
+            quantityDelta: -m.quantityDelta,
+            movementType: StockMovementType.REVERSAL,
+            referenceType: 'STOCK_INTAKE_UNDO',
+            referenceId: intake.id,
+            reason: 'Stock entry undone',
+            createdById: user.id,
+          },
+        });
+      }
+
+      return { undone: true, belowZero };
+    });
+  }
+
+
+
   findAll(branchId?: string) {
     return this.prisma.stockIntake.findMany({
-      where: branchId?.trim()
-        ? { branchId: branchId.trim() }
-        : undefined,
+      where: {
+        voidedAt: null,
+        ...(branchId?.trim() ? { branchId: branchId.trim() } : {}),
+      },
       include: {
         branch: true,
         recordedBy: {
