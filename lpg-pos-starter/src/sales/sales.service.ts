@@ -531,7 +531,7 @@ export class SalesService {
               })),
             replayed: false,
           };
-        });
+        }, {maxWait: 10000, timeout: 20000});
       } catch (error) {
         // Two sales finished at the same moment and picked the same number.
         if (attempt < 4 && isSaleNumberClash(error)) continue;
