@@ -88,7 +88,8 @@ model Branch {
   payments    Payment[]
   deliveries  Delivery[]
   auditLogs   AuditLog[]
-
+  transfersOut StockTransfer[] @relation("TransferFrom")
+  transfersIn  StockTransfer[] @relation("TransferTo")
 
   @@map("branches")
 }
@@ -111,7 +112,8 @@ model User {
   movements          StockMovement[] @relation("MovementCreatedBy")
   stockIntakes       StockIntake[] @relation("IntakeRecordedBy")
   auditLogs          AuditLog[]
-
+  transfersSent      StockTransfer[] @relation("TransferSentBy")
+  transfersReceived  StockTransfer[] @relation("TransferReceivedBy")
   @@map("users")
 }
 
@@ -161,7 +163,7 @@ model Product {
   inventory  InventoryBalance[]
   movements  StockMovement[]
   saleItems  SaleItem[]
-
+  transferItems StockTransferItem[]
   @@index([category])
   @@index([brandId])
   @@index([name])
@@ -337,4 +339,49 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+enum TransferStatus{
+  IN_TRANSIT
+  RECEIVED
+  CANCELLED 
+}
+
+model StockTransfer{
+  id            String         @id @default(uuid()) @db.Uuid
+  fromBranchId  String         @map("from_branch_id") @db.Uuid
+  toBranchId    String         @map("to_branch_id") @db.Uuid
+  status        TransferStatus @default(IN_TRANSIT)
+  notes         String?
+  sentById      String         @map("sent_by_id") @db.Uuid
+  receivedById  String?        @map("received_by_id") @db.Uuid
+  cancelledById String?        @map("cancelled_by_id") @db.Uuid
+  createdAt     DateTime       @default(now()) @map("created_at")
+  receivedAt    DateTime?      @map("received_at")
+  cancelledAt   DateTime?      @map("cancelled_at")
+
+  fromBranch Branch @relation("TransferFrom", fields: [fromBranchId], references: [id])
+  toBranch   Branch @relation("TransferTo", fields: [toBranchId], references: [id])
+  sentBy     User   @relation("TransferSentBy", fields: [sentById], references: [id])
+  receivedBy User?  @relation("TransferReceivedBy", fields: [receivedById], references: [id])
+  items      StockTransferItem[]
+
+  @@index([fromBranchId, status])
+  @@index([toBranchId, status])
+  @@map("stock_transfers")
+ 
+}
+
+model StockTransferItem{
+  id             String         @id @default(uuid()) @db.Uuid
+  transferId     String         @map("transfer_id") @db.Uuid
+  productId      String         @map("product_id") @db.Uuid
+  cylinderStatus CylinderStatus @map("cylinder_status")
+  quantity       Int
+
+  transfer StockTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  product  Product       @relation(fields: [productId], references: [id])
+
+  @@index([transferId])
+  @@map("stock_transfer_items")
 }
