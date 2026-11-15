@@ -90,7 +90,9 @@ model Branch {
   auditLogs   AuditLog[]
   transfersOut StockTransfer[] @relation("TransferFrom")
   transfersIn  StockTransfer[] @relation("TransferTo")
-
+  expenses        Expense[]
+  stockPurchases  StockPurchase[]
+  stockValuations StockValuation[]
   @@map("branches")
 }
 
@@ -114,6 +116,9 @@ model User {
   auditLogs          AuditLog[]
   transfersSent      StockTransfer[] @relation("TransferSentBy")
   transfersReceived  StockTransfer[] @relation("TransferReceivedBy")
+  expensesRecorded        Expense[]        @relation("ExpenseRecordedBy")
+  stockPurchasesRecorded  StockPurchase[]  @relation("PurchaseRecordedBy")
+  stockValuationsRecorded StockValuation[] @relation("ValuationRecordedBy")
   @@map("users")
 }
 
@@ -384,4 +389,70 @@ model StockTransferItem{
 
   @@index([transferId])
   @@map("stock_transfer_items")
+}
+
+model ExpenseCategory {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @unique
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  expenses Expense[]
+
+  @@map("expense_categories")
+}
+
+model Expense {
+  id           String    @id @default(uuid()) @db.Uuid
+  branchId     String?   @map("branch_id") @db.Uuid
+  categoryId   String    @map("category_id") @db.Uuid
+  amount       Decimal   @db.Decimal(12, 2)
+  expenseDate  DateTime  @map("expense_date") @db.Date
+  description  String?
+  recordedById String    @map("recorded_by_id") @db.Uuid
+  createdAt    DateTime  @default(now()) @map("created_at")
+  voidedAt     DateTime? @map("voided_at")
+  voidedById   String?   @map("voided_by_id") @db.Uuid
+
+  branch     Branch?         @relation(fields: [branchId], references: [id])
+  category   ExpenseCategory @relation(fields: [categoryId], references: [id])
+  recordedBy User            @relation("ExpenseRecordedBy", fields: [recordedById], references: [id])
+
+  @@index([branchId, expenseDate])
+  @@index([expenseDate])
+  @@map("expenses")
+}
+
+model StockPurchase {
+  id           String    @id @default(uuid()) @db.Uuid
+  branchId     String    @map("branch_id") @db.Uuid
+  amount       Decimal   @db.Decimal(12, 2)
+  purchaseDate DateTime  @map("purchase_date") @db.Date
+  description  String?
+  recordedById String    @map("recorded_by_id") @db.Uuid
+  createdAt    DateTime  @default(now()) @map("created_at")
+  voidedAt     DateTime? @map("voided_at")
+  voidedById   String?   @map("voided_by_id") @db.Uuid
+
+  branch     Branch @relation(fields: [branchId], references: [id])
+  recordedBy User   @relation("PurchaseRecordedBy", fields: [recordedById], references: [id])
+
+  @@index([branchId, purchaseDate])
+  @@map("stock_purchases")
+}
+
+model StockValuation {
+  id           String   @id @default(uuid()) @db.Uuid
+  branchId     String   @map("branch_id") @db.Uuid
+  month        DateTime @db.Date
+  value        Decimal  @db.Decimal(12, 2)
+  recordedById String   @map("recorded_by_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  branch     Branch @relation(fields: [branchId], references: [id])
+  recordedBy User   @relation("ValuationRecordedBy", fields: [recordedById], references: [id])
+
+  @@unique([branchId, month])
+  @@map("stock_valuations")
 }

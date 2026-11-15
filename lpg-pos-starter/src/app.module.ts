@@ -12,6 +12,7 @@ import { SalesModule } from './sales/sales.module';
 import { CustomersModule } from './customers/customers.module';
 import {ReportsModule} from './reports/reports.module';
 import { StockTransfersModule } from './stock-transfers/stock-transfers.module';
+import { ExpensesModule } from './expenses/expenses.module';
 @Module({
   imports: [
     PrismaModule,
@@ -26,6 +27,7 @@ import { StockTransfersModule } from './stock-transfers/stock-transfers.module';
     CustomersModule,
     ReportsModule,
     StockTransfersModule,
+    ExpensesModule,
   ],
   controllers: [HealthController],
 })
